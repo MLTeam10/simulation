@@ -239,17 +239,10 @@ def main():
         ###########################
 
         # Spawn the blueprints
-        camera = SpawnActor(
-            camera_bp,
-            carla.Transform(carla.Location(x=1.6, z=1.6)), 
-            vehicles_list[0]
-        )
-
         spectator = world.get_spectator()
         world_snapshot = world.wait_for_tick() 
         print(vehicles[0].transform)
         spectator.set_transform(vehicles[0].transform)
-
 
         cam_bp = None
         cam_bp = world.get_blueprint_library().find('sensor.camera.rgb')
@@ -260,7 +253,7 @@ def main():
         cam_rotation = carla.Rotation(-20,0,0)
         cam_transform = carla.Transform(cam_location,cam_rotation)
         ego_cam = world.spawn_actor(cam_bp,cam_transform,ego_vehicle,carla.AttachmentType.Rigid)
-        ego_cam.listen(lambda image: image.save_to_disk('tutorial/output/%.6d.jpg' % image.frame))
+        ego_cam.listen(lambda image: image.save_to_disk('output/%.6d.jpg' % image.frame))
         # lidar = SpawnActor(
         #     blueprint=lidar_bp,
         #     transform=carla.Transform(carla.Location(x=1.0, z=1.8)),
