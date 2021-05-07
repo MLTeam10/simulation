@@ -187,8 +187,6 @@ def main():
         # Spawn vehicles
         # --------------
         batch = []
-        vehicles = []
-        ego_vehicle = None
         for n, transform in enumerate(spawn_points):
             if n >= args.number_of_vehicles:
                 break
@@ -201,7 +199,6 @@ def main():
                 blueprint.set_attribute('driver_id', driver_id)
 
             if n == 0:
-                print('ego')
                 blueprint.set_attribute('role_name', 'ego')
             else:
                 blueprint.set_attribute('role_name', 'autopilot')
@@ -212,48 +209,43 @@ def main():
                 light_state = vls.Position | vls.LowBeam | vls.LowBeam
 
             # spawn the cars and set their autopilot and light state all together
-
-            if n == 0:
-                ego_vehicle = world.spawn_actor(blueprint, transform)
-                ego_vehicle.set_autopilot(True)
-            else:
-                vehicle = SpawnActor(blueprint, transform)
-                batch.append(vehicle
-                    .then(SetAutopilot(FutureActor, True, traffic_manager.get_port()))
-                    .then(SetVehicleLightState(FutureActor, light_state)))
-                vehicles.append(vehicle)
-            # print(vehicle.transform)
-
-            # vehicles.append(vehicle)
-
-            #vehicles.append(transform)            
-            
+            batch.append(SpawnActor(blueprint, transform)
+                .then(SetAutopilot(FutureActor, True, traffic_manager.get_port()))
+                .then(SetVehicleLightState(FutureActor, light_state)))
+ 
 
         for response in client.apply_batch_sync(batch, synchronous_master):
             if response.error:
                 logging.error(response.error)
             else:
                 vehicles_list.append(response.actor_id)
-                
-
+        
+        time.sleep(0.5)  # This is so that the vehicle gets registered in the actors.
+        ego_vehicle = world.get_actors().find(vehicles_list[0])
         ###########################
 
         # Spawn the blueprints
         spectator = world.get_spectator()
         world_snapshot = world.wait_for_tick() 
-        print(vehicles[0].transform)
-        spectator.set_transform(vehicles[0].transform)
+
+        factor = 2
 
         cam_bp = None
         cam_bp = world.get_blueprint_library().find('sensor.camera.rgb')
-        cam_bp.set_attribute("image_size_x",str(640))
-        cam_bp.set_attribute("image_size_y",str(480))
+        cam_bp.set_attribute("image_size_x",str(640/factor))
+        cam_bp.set_attribute("image_size_y",str(480/factor))
         cam_bp.set_attribute("fov",str(110))
         cam_location = carla.Location(0.8,0,1.5)
         cam_rotation = carla.Rotation(-20,0,0)
         cam_transform = carla.Transform(cam_location,cam_rotation)
         ego_cam = world.spawn_actor(cam_bp,cam_transform,ego_vehicle,carla.AttachmentType.Rigid)
         ego_cam.listen(lambda image: image.save_to_disk('output/%.6d.jpg' % image.frame))
+
+        while True:
+            world.wait_for_tick() 
+            spectator.set_transform(ego_cam.get_transform())
+            #time.sleep(0.1)
+            
         # lidar = SpawnActor(
         #     blueprint=lidar_bp,
         #     transform=carla.Transform(carla.Location(x=1.0, z=1.8)),
