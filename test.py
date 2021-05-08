@@ -25,6 +25,7 @@ except IndexError:
 import carla
 
 from carla import VehicleLightState as vls
+from carla import ColorConverter
 
 import argparse
 import logging
@@ -228,22 +229,22 @@ def main():
         spectator = world.get_spectator()
         world_snapshot = world.wait_for_tick() 
 
-        factor = 2
+        factor = 1
 
         cam_bp = None
-        cam_bp = world.get_blueprint_library().find('sensor.camera.rgb')
+        cam_bp = world.get_blueprint_library().find('sensor.camera.semantic_segmentation') # or .rgb
         cam_bp.set_attribute("image_size_x",str(640/factor))
         cam_bp.set_attribute("image_size_y",str(480/factor))
         cam_bp.set_attribute("fov",str(110))
+        cam_bp.set_attribute('sensor_tick', '5.0')
         cam_location = carla.Location(0.8,0,1.5)
         cam_rotation = carla.Rotation(-20,0,0)
         cam_transform = carla.Transform(cam_location,cam_rotation)
         ego_cam = world.spawn_actor(cam_bp,cam_transform,ego_vehicle,carla.AttachmentType.Rigid)
-        ego_cam.listen(lambda image: image.save_to_disk('output/%.6d.jpg' % image.frame))
+        ego_cam.listen(lambda image: save_image(image))
 
-        while True:
-            world.wait_for_tick() 
-            spectator.set_transform(ego_cam.get_transform())
+        #carla_settings.add_sensor(ego_cam)
+
             #time.sleep(0.1)
             
         # lidar = SpawnActor(
@@ -335,11 +336,13 @@ def main():
         # example of how to use parameters
         traffic_manager.global_percentage_speed_difference(30.0)
 
-        while True:
+        while True:    
             if args.sync and synchronous_master:
                 world.tick()
+                spectator.set_transform(ego_cam.get_transform())
             else:
                 world.wait_for_tick()
+                spectator.set_transform(ego_cam.get_transform())
 
     finally:
 
@@ -361,8 +364,12 @@ def main():
 
         time.sleep(0.5)
 
-if __name__ == '__main__':
+def save_image(image):
+    image.convert(ColorConverter.CityScapesPalette)
+    image.save_to_disk('output/%.6d.jpg' % image.frame)
 
+if __name__ == '__main__':
+    
     try:
         main()
     except KeyboardInterrupt:
