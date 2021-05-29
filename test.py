@@ -12,6 +12,7 @@ import glob
 import os
 import sys
 import time
+from buffer_saver import BufferedImageSaver
 
 try:
     #/opt/carla-simulator/PythonAPI/carla/dist/carla-0.9.11-py3.7-linux-x86_64.egg
@@ -108,6 +109,8 @@ def main():
     random.seed(args.seed if args.seed is not None else int(time.time()))
 
     try:
+        saver = BufferedImageSaver('output/ep_/', 10, 480, 640, 1, 'CameraSemSeg')
+
         world = client.get_world()
 
         ###########################
@@ -236,12 +239,12 @@ def main():
         cam_bp.set_attribute("image_size_x",str(640/factor))
         cam_bp.set_attribute("image_size_y",str(480/factor))
         cam_bp.set_attribute("fov",str(110))
-        cam_bp.set_attribute('sensor_tick', '5.0')
+        cam_bp.set_attribute('sensor_tick', '20.0')
         cam_location = carla.Location(0.8,0,1.5)
         cam_rotation = carla.Rotation(-20,0,0)
         cam_transform = carla.Transform(cam_location,cam_rotation)
         ego_cam = world.spawn_actor(cam_bp,cam_transform,ego_vehicle,carla.AttachmentType.Rigid)
-        ego_cam.listen(lambda image: save_image(image))
+        ego_cam.listen(lambda image: save_image(saver, image))
 
         #carla_settings.add_sensor(ego_cam)
 
@@ -364,9 +367,11 @@ def main():
 
         time.sleep(0.5)
 
-def save_image(image):
+def save_image(saver, image):
     image.convert(ColorConverter.CityScapesPalette)
-    image.save_to_disk('output/%.6d.jpg' % image.frame)
+    #image.save_to_disk('output/%.6d.jpg' % image.frame)
+
+    saver.add_image(image.raw_data, 'output/%.6d.jpg')
 
 if __name__ == '__main__':
     
