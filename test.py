@@ -244,7 +244,19 @@ def main():
         cam_rotation = carla.Rotation(-20,0,0)
         cam_transform = carla.Transform(cam_location,cam_rotation)
         ego_cam = world.spawn_actor(cam_bp,cam_transform,ego_vehicle,carla.AttachmentType.Rigid)
-        ego_cam.listen(lambda image: save_image(saver, image))
+        ego_cam.listen(lambda image: save_image(saver, image, True))
+
+        cam_bp_rgb = None
+        cam_bp_rgb = world.get_blueprint_library().find('sensor.camera.rgb') # or .rgb
+        cam_bp_rgb.set_attribute("image_size_x",str(640/factor))
+        cam_bp_rgb.set_attribute("image_size_y",str(480/factor))
+        cam_bp_rgb.set_attribute("fov",str(110))
+        cam_bp_rgb.set_attribute('sensor_tick', '20.0')
+        cam_location_rgb = carla.Location(0.8,0,1.5)
+        cam_rotation_rgb = carla.Rotation(-20,0,0)
+        cam_transform_rgb = carla.Transform(cam_location_rgb,cam_rotation_rgb)
+        ego_cam_rgb = world.spawn_actor(cam_bp_rgb,cam_transform_rgb,ego_vehicle,carla.AttachmentType.Rigid)
+        ego_cam_rgb.listen(lambda image: save_image(saver, image, False))
 
         #carla_settings.add_sensor(ego_cam)
 
@@ -367,10 +379,11 @@ def main():
 
         time.sleep(0.5)
 
-def save_image(saver, image):
-    image.convert(ColorConverter.CityScapesPalette)
-    #image.save_to_disk('output/%.6d.jpg' % image.frame)
+def save_image(saver, image, convert):
+    if convert:
+        image.convert(ColorConverter.CityScapesPalette)
 
+    image.save_to_disk('output/%.6d.jpg' % image.frame)
     saver.add_image(image.raw_data, 'output/%.6d.jpg')
 
 if __name__ == '__main__':
