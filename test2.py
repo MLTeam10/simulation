@@ -161,5 +161,19 @@ def main():
 
     print("That's it!")
     
+
+
+from PIL import Image
+
 if __name__ == "__main__":
-    main()
+    #main()
+    Image.open('output/Images/0.jpg')
+    mask = Image.open('output/Masks/c0.png')
+    mask.putpalette([
+        0, 0, 0, # black background
+        # 13,13,13, # car.3
+        # 34,34,34, # road.5
+        # 48,48,48, # sky.6
+        60,60,60 #pali
+    ])
+    print(mask)

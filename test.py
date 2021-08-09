@@ -12,6 +12,7 @@ import glob
 import os
 import sys
 import time
+import numpy
 from buffer_saver import BufferedImageSaver
 
 try:
@@ -27,6 +28,8 @@ import carla
 
 from carla import VehicleLightState as vls
 from carla import ColorConverter
+
+from PIL import Image
 
 import argparse
 import logging
@@ -232,7 +235,7 @@ def main():
         spectator = world.get_spectator()
         world_snapshot = world.wait_for_tick() 
 
-        factor = 1
+        factor = 0.5
 
         cam_bp = None
         cam_bp = world.get_blueprint_library().find('sensor.camera.semantic_segmentation') # or .rgb
@@ -240,11 +243,11 @@ def main():
         cam_bp.set_attribute("image_size_y",str(480/factor))
         cam_bp.set_attribute("fov",str(110))
         cam_bp.set_attribute('sensor_tick', '20.0')
-        cam_location = carla.Location(0.8,0,1.5)
-        cam_rotation = carla.Rotation(-20,0,0)
+        cam_location = carla.Location(3.5,0,1.5)
+        cam_rotation = carla.Rotation(-10,0,0)
         cam_transform = carla.Transform(cam_location,cam_rotation)
         ego_cam = world.spawn_actor(cam_bp,cam_transform,ego_vehicle,carla.AttachmentType.Rigid)
-        ego_cam.listen(lambda image: save_image(saver, image, True))
+        ego_cam.listen(lambda image: save_image(saver, image, True, 'jpg'))
 
         cam_bp_rgb = None
         cam_bp_rgb = world.get_blueprint_library().find('sensor.camera.rgb') # or .rgb
@@ -252,11 +255,11 @@ def main():
         cam_bp_rgb.set_attribute("image_size_y",str(480/factor))
         cam_bp_rgb.set_attribute("fov",str(110))
         cam_bp_rgb.set_attribute('sensor_tick', '20.0')
-        cam_location_rgb = carla.Location(0.8,0,1.5)
-        cam_rotation_rgb = carla.Rotation(-20,0,0)
+        cam_location_rgb = carla.Location(3.5,0,1.5)
+        cam_rotation_rgb = carla.Rotation(-10,0,0)
         cam_transform_rgb = carla.Transform(cam_location_rgb,cam_rotation_rgb)
         ego_cam_rgb = world.spawn_actor(cam_bp_rgb,cam_transform_rgb,ego_vehicle,carla.AttachmentType.Rigid)
-        ego_cam_rgb.listen(lambda image: save_image(saver, image, False))
+        ego_cam_rgb.listen(lambda image: save_image(saver, image, False, 'png'))
 
         #carla_settings.add_sensor(ego_cam)
 
@@ -379,12 +382,68 @@ def main():
 
         time.sleep(0.5)
 
-def save_image(saver, image, convert):
-    if convert:
-        image.convert(ColorConverter.CityScapesPalette)
+kkk = 0
 
-    image.save_to_disk('output/%.6d.jpg' % image.frame)
-    saver.add_image(image.raw_data, 'output/%.6d.jpg')
+def save_image(saver, image, convert, format):
+    global kkk
+    if convert:
+        k = labels_to_cityscapes_palette(image)
+        im = Image.fromarray(numpy.uint8(k)).convert("P")
+        im.save('output/Masks/%.6d.png' % kkk)
+    else:
+        image.save_to_disk('output/Images/%.6d.jpg' % kkk)
+        kkk += 1
+
+
+def labels_to_cityscapes_palette(image):
+    """
+    Convert an image containing CARLA semantic segmentation labels to
+    Cityscapes palette.
+    """
+    classes = {
+        # 0: [0, 0, 0],         # None
+        # 1: [70, 70, 70],      # Buildings
+        # 2: [190, 153, 153],   # Fences
+        # 3: [72, 0, 90],       # Other
+        4: [255, 255, 255],     # Pedestrians
+        # 5: [153, 153, 153],   # Poles
+        # 6: [157, 234, 50],    # RoadLines
+        # 7: [128, 64, 128],    # Roads
+        # 8: [244, 35, 232],    # Sidewalks
+        # 9: [107, 142, 35],    # Vegetation
+        # 10: [0, 0, 255],      # Vehicles
+        # 11: [102, 102, 156],  # Walls
+        # 12: [220, 220, 0],    # TrafficSigns
+        # 13: [255, 255, 255]     # ?
+    }
+    array = labels_to_array(image)
+    result = numpy.zeros((array.shape[0], array.shape[1], 3))
+    for key, value in classes.items():
+        result[numpy.where(array == key)] = value
+    return result
+
+def to_bgra_array(image):
+    """Convert a CARLA raw image to a BGRA numpy array."""
+    array = numpy.frombuffer(image.raw_data, dtype=numpy.dtype("uint8"))
+    array = numpy.reshape(array, (image.height, image.width, 4))
+    return array
+
+
+# def to_rgb_array(image):
+#     """Convert a CARLA raw image to a RGB numpy array."""
+#     array = to_bgra_array(image)
+#     # Convert BGRA to RGB.
+#     #array = array[:, :, :3]
+#     #array = array[:, :, ::-1]
+#     return array
+
+
+def labels_to_array(image):
+    """
+    Convert an image containing CARLA semantic segmentation labels to a 2D array
+    containing the label of each pixel.
+    """
+    return to_bgra_array(image)[:, :, 2]
 
 if __name__ == '__main__':
     

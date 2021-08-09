@@ -79,3 +79,19 @@ class BufferedImageSaver:
             raw_image = self.process_by_type(raw_image[:, :, :3], name)
             self.buffer[int(self.index)] = raw_image
             self.index += 1
+
+    def add_raw_image(self, raw_image, name):
+        """Save the current buffer to disk and reset the current object
+        if the buffer is full, otherwise store the bytes of an image in
+        self.buffer.
+        """
+        if self.is_full():
+            self.save()
+            self.reset()
+            self.add_raw_image(raw_image, name)
+        else:
+            raw_image = raw_image.reshape(
+                            self.buffer.shape[1], self.buffer.shape[2], -1)
+            raw_image = self.process_by_type(raw_image[:, :, :3], name)
+            self.buffer[int(self.index)] = raw_image
+            self.index += 1
