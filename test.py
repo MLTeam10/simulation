@@ -235,31 +235,38 @@ def main():
         spectator = world.get_spectator()
         world_snapshot = world.wait_for_tick() 
 
-        factor = 0.5
+        factor = 0.25
 
         cam_bp = None
         cam_bp = world.get_blueprint_library().find('sensor.camera.semantic_segmentation') # or .rgb
         cam_bp.set_attribute("image_size_x",str(640/factor))
         cam_bp.set_attribute("image_size_y",str(480/factor))
         cam_bp.set_attribute("fov",str(110))
-        cam_bp.set_attribute('sensor_tick', '20.0')
+        #cam_bp.set_attribute('fstop', str(1.4))
         cam_location = carla.Location(3.5,0,1.5)
         cam_rotation = carla.Rotation(-10,0,0)
         cam_transform = carla.Transform(cam_location,cam_rotation)
-        ego_cam = world.spawn_actor(cam_bp,cam_transform,ego_vehicle,carla.AttachmentType.Rigid)
-        ego_cam.listen(lambda image: save_image(saver, image, True, 'jpg'))
 
         cam_bp_rgb = None
         cam_bp_rgb = world.get_blueprint_library().find('sensor.camera.rgb') # or .rgb
         cam_bp_rgb.set_attribute("image_size_x",str(640/factor))
         cam_bp_rgb.set_attribute("image_size_y",str(480/factor))
         cam_bp_rgb.set_attribute("fov",str(110))
-        cam_bp_rgb.set_attribute('sensor_tick', '20.0')
+        #cam_bp_rgb.set_attribute('fstop', str(1.4))
         cam_location_rgb = carla.Location(3.5,0,1.5)
         cam_rotation_rgb = carla.Rotation(-10,0,0)
         cam_transform_rgb = carla.Transform(cam_location_rgb,cam_rotation_rgb)
+        
+
+        cam_bp.set_attribute('sensor_tick', '20.0')
+        cam_bp_rgb.set_attribute('sensor_tick', '20.0')
+        
+
+        ego_cam = world.spawn_actor(cam_bp,cam_transform,ego_vehicle,carla.AttachmentType.Rigid)
         ego_cam_rgb = world.spawn_actor(cam_bp_rgb,cam_transform_rgb,ego_vehicle,carla.AttachmentType.Rigid)
-        ego_cam_rgb.listen(lambda image: save_image(saver, image, False, 'png'))
+       
+        ego_cam.listen(lambda image: save_image(image, True))
+        ego_cam_rgb.listen(lambda image: save_image(image, False))
 
         #carla_settings.add_sensor(ego_cam)
 
@@ -276,8 +283,8 @@ def main():
         # Spawn Walkers
         # -------------
         # some settings
-        percentagePedestriansRunning = 0.0      # how many pedestrians will run
-        percentagePedestriansCrossing = 0.0     # how many pedestrians will walk through the road
+        percentagePedestriansRunning = 0.1      # how many pedestrians will run
+        percentagePedestriansCrossing = 0.5     # how many pedestrians will walk through the road
         # 1. take all the random locations to spawn
         spawn_points = []
         for i in range(args.number_of_walkers):
@@ -384,12 +391,15 @@ def main():
 
 kkk = 0
 
-def save_image(saver, image, convert, format):
+def save_image(image, convert):
     global kkk
     if convert:
         k = labels_to_cityscapes_palette(image)
         im = Image.fromarray(numpy.uint8(k)).convert("P")
         im.save('output/Masks/%.6d.png' % kkk)
+
+        image.convert(ColorConverter.CityScapesPalette)
+        image.save_to_disk('output/Segmentation/%.6d.png' % kkk)
     else:
         image.save_to_disk('output/Images/%.6d.jpg' % kkk)
         kkk += 1
