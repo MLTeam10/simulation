@@ -1,28 +1,21 @@
-#!/usr/bin/env python
-
-# Copyright (c) 2019 Computer Vision Center (CVC) at the Universitat Autonoma de
-# Barcelona (UAB).
-#
-# This work is licensed under the terms of the MIT license.
-# For a copy, see <https://opensource.org/licenses/MIT>.
-
-"""Spawn NPCs into the simulation"""
-
 import glob
 import os
 import sys
 import time
 import numpy
-from buffer_saver import BufferedImageSaver
 
 try:
-    #/opt/carla-simulator/PythonAPI/carla/dist/carla-0.9.11-py3.7-linux-x86_64.egg
-    sys.path.append(glob.glob('/opt/carla-simulator/PythonAPI/carla/dist/carla-*%d.%d-%s.egg' % (
+    sys.path.append(glob.glob('../carla/dist/carla-*%d.%d-%s.egg' % (
         sys.version_info.major,
         sys.version_info.minor,
         'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
 except IndexError:
     pass
+
+try:
+    import queue
+except ImportError:
+    import Queue as queue
 
 import carla
 
@@ -34,6 +27,50 @@ from PIL import Image
 import argparse
 import logging
 from numpy import random
+
+
+class CarlaSyncMode(object):
+
+    def __init__(self, world, *sensors, **kwargs):
+        self.world = world
+        self.sensors = sensors
+        self.frame = None
+        self.delta_seconds = 1.0 / kwargs.get('fps', 1)
+        self._queues = []
+        self._settings = None
+
+    def __enter__(self):
+        self._settings = self.world.get_settings()
+        self.frame = self.world.apply_settings(carla.WorldSettings(
+            no_rendering_mode=False,
+            synchronous_mode=True,
+            fixed_delta_seconds=self.delta_seconds))
+
+        def make_queue(register_event):
+            q = queue.Queue()
+            register_event(q.put)
+            self._queues.append(q)
+
+        make_queue(self.world.on_tick)
+        for sensor in self.sensors:
+            make_queue(sensor.listen)
+        return self
+
+    def tick(self, timeout):
+        self.frame = self.world.tick()
+        data = [self._retrieve_data(q, timeout) for q in self._queues]
+        assert all(x.frame == self.frame for x in data)
+        return data
+
+    def __exit__(self, *args, **kwargs):
+        self.world.apply_settings(self._settings)
+
+    def _retrieve_data(self, sensor_queue, timeout):
+        while True:
+            data = sensor_queue.get(timeout=timeout)
+            if data.frame == self.frame:
+                return data
+
 
 def main():
     argparser = argparse.ArgumentParser(
@@ -108,40 +145,12 @@ def main():
     all_id = []
     client = carla.Client(args.host, args.port)
     client.set_timeout(10.0)
-    synchronous_master = False
+    synchronous_master = True
     random.seed(args.seed if args.seed is not None else int(time.time()))
 
     try:
-        saver = BufferedImageSaver('output/ep_/', 10, 480, 640, 1, 'CameraSemSeg')
-
+        args.sync = True
         world = client.get_world()
-
-        ###########################
-        camera = None
-        lidar = None
-        
-        bp_lib = world.get_blueprint_library()
-
-        camera_bp = bp_lib.filter("sensor.camera.rgb")[0]
-        lidar_bp = bp_lib.filter("sensor.lidar.ray_cast")[0]
-
-        # Configure the blueprints
-        '''
-        camera_bp.set_attribute("image_size_x", str(args.width))
-        camera_bp.set_attribute("image_size_y", str(args.height))
-
-        if args.no_noise:
-            lidar_bp.set_attribute('dropoff_general_rate', '0.0')
-            lidar_bp.set_attribute('dropoff_intensity_limit', '1.0')
-            lidar_bp.set_attribute('dropoff_zero_intensity', '0.0')
-        lidar_bp.set_attribute('upper_fov', str(args.upper_fov))
-        lidar_bp.set_attribute('lower_fov', str(args.lower_fov))
-        lidar_bp.set_attribute('channels', str(args.channels))
-        lidar_bp.set_attribute('range', str(args.range))
-        lidar_bp.set_attribute('points_per_second', str(args.points_per_second))
-        '''
-
-        ###########################
 
         traffic_manager = client.get_trafficmanager(args.tm_port)
         traffic_manager.set_global_distance_to_leading_vehicle(1.0)
@@ -233,7 +242,6 @@ def main():
 
         # Spawn the blueprints
         spectator = world.get_spectator()
-        world_snapshot = world.wait_for_tick() 
 
         factor = 0.25
 
@@ -257,25 +265,8 @@ def main():
         cam_rotation_rgb = carla.Rotation(-10,0,0)
         cam_transform_rgb = carla.Transform(cam_location_rgb,cam_rotation_rgb)
         
-
-        cam_bp.set_attribute('sensor_tick', '20.0')
-        cam_bp_rgb.set_attribute('sensor_tick', '20.0')
-        
-
         ego_cam = world.spawn_actor(cam_bp,cam_transform,ego_vehicle,carla.AttachmentType.Rigid)
         ego_cam_rgb = world.spawn_actor(cam_bp_rgb,cam_transform_rgb,ego_vehicle,carla.AttachmentType.Rigid)
-       
-        ego_cam.listen(lambda image: save_image(image, True))
-        ego_cam_rgb.listen(lambda image: save_image(image, False))
-
-        #carla_settings.add_sensor(ego_cam)
-
-            #time.sleep(0.1)
-            
-        # lidar = SpawnActor(
-        #     blueprint=lidar_bp,
-        #     transform=carla.Transform(carla.Location(x=1.0, z=1.8)),
-        #     vehicles_list[0])
 
         ###########################
 
@@ -361,16 +352,31 @@ def main():
         # example of how to use parameters
         traffic_manager.global_percentage_speed_difference(30.0)
 
-        while True:    
-            if args.sync and synchronous_master:
-                world.tick()
-                spectator.set_transform(ego_cam.get_transform())
-            else:
-                world.wait_for_tick()
+        # Create a synchronous mode context.
+        with CarlaSyncMode(world, ego_cam_rgb, ego_cam, fps=1) as sync_mode:
+            zzz = 0
+            rk = 0
+            while True:
+
+                # Advance the simulation and wait for the data.
+                snapshot, image_rgb, image_semseg = sync_mode.tick(timeout=2.0)
+
+                # Choose the next waypoint and update the car location.
+                #waypoint = random.choice(waypoint.next(1.5))
                 spectator.set_transform(ego_cam.get_transform())
 
+                # image_semseg.convert(carla.ColorConverter.CityScapesPalette)
+                fps = round(1.0 / snapshot.timestamp.delta_seconds)
+
+                if zzz % (fps * 10) == 0: # min is 2FPS, so save image only each 10 seconds
+                    print(rk)
+                    save_image(image_semseg, rk, True)
+                    save_image(image_rgb, rk, False)
+
+                    rk += 1
+
+                zzz += 1
     finally:
-
         if args.sync and synchronous_master:
             settings = world.get_settings()
             settings.synchronous_mode = False
@@ -389,20 +395,17 @@ def main():
 
         time.sleep(0.5)
 
-kkk = 0
 
-def save_image(image, convert):
-    global kkk
+def save_image(image, zk, convert):
     if convert:
         k = labels_to_cityscapes_palette(image)
         im = Image.fromarray(numpy.uint8(k)).convert("P")
-        im.save('output/Masks/%.6d.png' % kkk)
+        im.save('output/Masks/1%.10d.png' % zk)
 
         image.convert(ColorConverter.CityScapesPalette)
-        image.save_to_disk('output/Segmentation/%.6d.png' % kkk)
+        image.save_to_disk('output/Segmentation/1%.10d.png' % zk)
     else:
-        image.save_to_disk('output/Images/%.6d.jpg' % kkk)
-        kkk += 1
+        image.save_to_disk('output/Images/1%.10d.jpg' % zk)
 
 
 def labels_to_cityscapes_palette(image):
@@ -437,16 +440,6 @@ def to_bgra_array(image):
     array = numpy.frombuffer(image.raw_data, dtype=numpy.dtype("uint8"))
     array = numpy.reshape(array, (image.height, image.width, 4))
     return array
-
-
-# def to_rgb_array(image):
-#     """Convert a CARLA raw image to a RGB numpy array."""
-#     array = to_bgra_array(image)
-#     # Convert BGRA to RGB.
-#     #array = array[:, :, :3]
-#     #array = array[:, :, ::-1]
-#     return array
-
 
 def labels_to_array(image):
     """
