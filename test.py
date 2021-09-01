@@ -35,7 +35,7 @@ class CarlaSyncMode(object):
         self.world = world
         self.sensors = sensors
         self.frame = None
-        self.delta_seconds = 1.0 / kwargs.get('fps', 1)
+        self.delta_seconds = 1.0 / kwargs.get('fps', 20)
         self._queues = []
         self._settings = None
 
@@ -131,6 +131,11 @@ def main():
         metavar='S',
         type=int,
         help='Random device seed')
+    argparser.add_argument(
+        '-k', '--skip',
+        default=0,
+        type=int,
+        help='Skip files')
     argparser.add_argument(
         '--car-lights-on',
         action='store_true',
@@ -353,9 +358,9 @@ def main():
         traffic_manager.global_percentage_speed_difference(30.0)
 
         # Create a synchronous mode context.
-        with CarlaSyncMode(world, ego_cam_rgb, ego_cam, fps=1) as sync_mode:
+        with CarlaSyncMode(world, ego_cam_rgb, ego_cam, fps=20) as sync_mode:
             zzz = 0
-            rk = 0
+            rk = args.skip
             while True:
 
                 # Advance the simulation and wait for the data.
@@ -400,12 +405,12 @@ def save_image(image, zk, convert):
     if convert:
         k = labels_to_cityscapes_palette(image)
         im = Image.fromarray(numpy.uint8(k)).convert("P")
-        im.save('output/Masks/1%.10d.png' % zk)
+        im.save('output/Masks/2%.10d.png' % zk)
 
         image.convert(ColorConverter.CityScapesPalette)
-        image.save_to_disk('output/Segmentation/1%.10d.png' % zk)
+        image.save_to_disk('output/Segmentation/2%.10d.png' % zk)
     else:
-        image.save_to_disk('output/Images/1%.10d.jpg' % zk)
+        image.save_to_disk('output/Images/2%.10d.jpg' % zk)
 
 
 def labels_to_cityscapes_palette(image):
