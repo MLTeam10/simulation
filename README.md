@@ -12,3 +12,7 @@ cd /home/fabrizio/Workspace/CARLA_0.9.12/PythonAPI/test/
 
 ### Start simulation ('python' for CARLA 0.9.11, 'python3' for CARLA 0.9.12)
 python3 test.py -n 10 -w 200
+
+
+
+python3 ar.py --input record.mp4 --output output/record.avi --mask-rcnn model.pt
